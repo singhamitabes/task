@@ -24,7 +24,7 @@ const createUser = async (req, res) => {
 
     await newUser.save();
 
-    const token = jwt.sign({ userId: newUser._id }, 'AmitSingh', { expiresIn: '24h' });
+    const token = jwt.sign({ userId: newUser._id, latitude: newUser.latitude, longitude: newUser.longitude }, 'AmitSingh', { expiresIn: '1d' });
 
     const responseData = {
       status_code: '200',
@@ -49,25 +49,33 @@ const createUser = async (req, res) => {
 
 
 // To change all status of user
-const changeUserStatus = async (res, req) => {
-  async (req, res) => {
-    try {
-      const userStatusToSet = await User.findOne({ _id: req.userId });
-      await User.updateMany(
-        {},
-        { $set: { status: { $eq: ['$status', userStatusToSet.status] } } }
-      );
-      res.json({ status_code: 200, message: 'All users status changed successfully' });
-    } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: 'Internal Server Error' });
-    }
+const changeUserStatus = async (req, res) => {
+  try {
+    await User.updateMany(
+      {},
+      [
+        {
+          $set: {
+            status: {
+              $cond: {
+                if: { $eq: ["$status", "active"] },
+                then: "inactive",
+                else: "active",
+              },
+            },
+          },
+        },
+      ]
+    )
+    res.json({ status_code: 200, message: 'All users status changed successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 }
 
 const verifyToken = (req, res, next) => {
   const token = req.header('Authorization');
-  console.log(token);
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
   try {
     const decoded = jwt.verify(token, 'AmitSingh');
@@ -79,9 +87,10 @@ const verifyToken = (req, res, next) => {
 };
 
 
-//to get distance
+//to get distance2314
+
 const getUserCoordinatesFromToken = (token) => {
-  const decoded = jwt.verify(token, 'AmitSingh'); // Use your actual secret key
+  const decoded = jwt.verify(token, 'AmitSingh');
   return {
     latitude: decoded.latitude,
     longitude: decoded.longitude,
@@ -89,17 +98,20 @@ const getUserCoordinatesFromToken = (token) => {
 };
 
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
-  const R = 6371; // Radius of the Earth in kilometers
-  const dLat = (lat2 - lat1) * (Math.PI / 180);
-  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  console.log(lat1, lon1, lat2, lon2);
+  const R = 6371;
+  const toRadians = (angle) => angle * (Math.PI / 180);
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
   const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  const distance = R * c; // Distance in kilometers
-  return distance;
+  return R * c;
 };
+
 const calculateUserDistance = (req, res, next) => {
+  //1
   const token = req.header('Authorization');
   const destinationCoordinates = {
     latitude: parseFloat(req.query.Destination_Latitude),
@@ -111,29 +123,75 @@ const calculateUserDistance = (req, res, next) => {
   }
 
   try {
-    const userCoordinates = getUserCoordinatesFromToken(token);
-    const distance = calculateDistance(
-      userCoordinates.latitude,
-      userCoordinates.longitude,
-      destinationCoordinates.latitude,
-      destinationCoordinates.longitude
-    );
-
+    const { latitude, longitude } = getUserCoordinatesFromToken(token);
+    //console.log(latitude, longitude);
+    const distance = calculateDistance(latitude, longitude, destinationCoordinates.latitude, destinationCoordinates.longitude);
     req.distance = distance;
     next();
   } catch (error) {
     res.status(401).json({ error: 'Invalid token' });
   }
 };
+
 const getUserDistance = async (req, res) => {
+  //4
   res.json({
     status_code: '200',
     message: '----------',
-    distance: `${req.distance.toFixed(2)}km`,
+    distance: `${req.distance.toFixed(0)}km`,
   });
-}
+};
+
 
 //listing 
-const getUserListingByWeek = async (req, res) => { }
+const getUserListing = async (dayOfWeek) => {
+  try {
+    // Fetch user listing based on the day of the week from MongoDB
+    const users = await User.find();
 
-module.exports = { createUser, changeUserStatus, verifyToken, getUserDistance, calculateUserDistance, getUserListingByWeek }
+    // Ensure there are users before mapping
+    if (users.length === 0) {
+      console.warn('No users found.');
+      return [];
+    }
+
+    return users.map((user) => ({
+      name: `User on ${dayOfWeek}`,
+      email: `user${user.email.split('@')[0]}_${dayOfWeek}@example.com`,
+    }));
+  } catch (error) {
+    console.error('Error fetching user data:', error);
+    return [];
+  }
+};
+
+const getUserListingByWeek = async (req, res) => {
+  try {
+    const token = req.header('Authorization');
+    const weekNumbers = req.query.week_number;
+    if (!token || !weekNumbers) {
+      return res.status(400).json({ error: 'Invalid request parameters' });
+    }
+    const decoded = jwt.verify(token, 'AmitSingh'); // Use your actual secret key
+    // Split week numbers into an array
+    const weeks = weekNumbers.split(',').map(Number);
+    // Fetch user listing for each week and each day
+    const responseData = {};
+    for (const weekNumber of weeks) {
+      responseData[`week_${weekNumber}`] = {};
+      for (let day = 0; day < 7; day++) {
+        const dayOfWeek = (day + 1) % 7;
+        responseData[`week_${weekNumber}`][`${dayOfWeek}`] = await getUserListing(dayOfWeek);
+      }
+    }
+    res.json({
+      status_code: '200',
+      message: '----------',
+      data: responseData,
+    });
+  } catch (error) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+};
+
+module.exports = { createUser, changeUserStatus, verifyToken, getUserDistance, calculateDistance, calculateUserDistance, getUserListingByWeek }
