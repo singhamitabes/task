@@ -156,8 +156,8 @@ const getUserListing = async (dayOfWeek) => {
     }
 
     return users.map((user) => ({
-      name: `User on ${dayOfWeek}`,
-      email: `user${user.email.split('@')[0]}_${dayOfWeek}@example.com`,
+      name: user.name,
+      email: user.email,
     }));
   } catch (error) {
     console.error('Error fetching user data:', error);
@@ -175,13 +175,15 @@ const getUserListingByWeek = async (req, res) => {
     const decoded = jwt.verify(token, 'AmitSingh'); // Use your actual secret key
     // Split week numbers into an array
     const weeks = weekNumbers.split(',').map(Number);
+    // Define the days of the week
+    const daysOfWeek = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
     // Fetch user listing for each week and each day
     const responseData = {};
     for (const weekNumber of weeks) {
       responseData[`week_${weekNumber}`] = {};
       for (let day = 0; day < 7; day++) {
-        const dayOfWeek = (day + 1) % 7;
-        responseData[`week_${weekNumber}`][`${dayOfWeek}`] = await getUserListing(dayOfWeek);
+        const dayOfWeek = daysOfWeek[day];
+        responseData[`week_${weekNumber}`][dayOfWeek] = await getUserListing(dayOfWeek);
       }
     }
     res.json({
@@ -193,5 +195,6 @@ const getUserListingByWeek = async (req, res) => {
     res.status(401).json({ error: 'Invalid token' });
   }
 };
+
 
 module.exports = { createUser, changeUserStatus, verifyToken, getUserDistance, calculateDistance, calculateUserDistance, getUserListingByWeek }
