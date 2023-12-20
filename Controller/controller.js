@@ -6,6 +6,9 @@ const bcrypt = require("bcrypt");
 const createUser = async (req, res) => {
   const { name, email, password, address, latitude, longitude, status } = req.body;
   try {
+    if (!name || !email || !password || !address || !latitude || !longitude) {
+      return res.status(400).send({error :"Please Enter all field"})
+    }
     const existingUser = await User.findOne({ email: email });
     if (existingUser) {
       return res.status(400).json({ error: "Employee Record is Already Present" });
