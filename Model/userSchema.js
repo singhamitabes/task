@@ -23,6 +23,9 @@ const userSchema = mongoose.Schema({
     longitude: {
         type: Number
     },
+    RegisterDay: {
+        type: String
+    },
     status: {
         type: String,
         enum: ['active', 'inactive'],

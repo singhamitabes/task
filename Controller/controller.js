@@ -12,6 +12,10 @@ const createUser = async (req, res) => {
     }
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    const registerDate = new Date();
+    const options = { weekday: 'long' }; // 'long' returns the full name of the day
+    const dayName = registerDate.toLocaleDateString('en-US', options);
+
     const newUser = new User({
       name,
       email,
@@ -19,13 +23,13 @@ const createUser = async (req, res) => {
       address,
       latitude,
       longitude,
+      RegisterDay: dayName,
       status
     });
 
     await newUser.save();
 
     const token = jwt.sign({ userId: newUser._id, latitude: newUser.latitude, longitude: newUser.longitude }, 'AmitSingh', { expiresIn: '1d' });
-
     const responseData = {
       status_code: '200',
       message: 'User registered successfully',
@@ -36,7 +40,7 @@ const createUser = async (req, res) => {
         latitude: newUser.latitude,
         longitude: newUser.longitude,
         status: newUser.status,
-        register_at: new Date(),
+        register_at: newUser.RegisterDay,
         token
       }
     }
@@ -98,7 +102,6 @@ const getUserCoordinatesFromToken = (token) => {
 };
 
 const calculateDistance = (lat1, lon1, lat2, lon2) => {
-  console.log(lat1, lon1, lat2, lon2);
   const R = 6371;
   const toRadians = (angle) => angle * (Math.PI / 180);
   const dLat = toRadians(lat2 - lat1);
@@ -111,7 +114,6 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
 };
 
 const calculateUserDistance = (req, res, next) => {
-  //1
   const token = req.header('Authorization');
   const destinationCoordinates = {
     latitude: parseFloat(req.query.Destination_Latitude),
@@ -134,65 +136,62 @@ const calculateUserDistance = (req, res, next) => {
 };
 
 const getUserDistance = async (req, res) => {
-  //4
   res.json({
     status_code: '200',
     message: '----------',
-    distance: `${req.distance.toFixed(0)}km`,
+    distance: `${req.distance}km`,
   });
 };
 
 
-//listing 
-const getUserListing = async (dayOfWeek) => {
+// listing 
+const getUserListingByWeek = async (req, res) => {
   try {
-    // Fetch user listing based on the day of the week from MongoDB
-    const users = await User.find();
+    const token = req.header('Authorization');
+    const weekNumbers = req.query.week_number;
 
-    // Ensure there are users before mapping
-    if (users.length === 0) {
-      console.warn('No users found.');
-      return [];
+    if (!token || !weekNumbers) {
+      return res.status(400).json({ error: 'Invalid request parameters' });
     }
 
+    const decoded = jwt.verify(token, 'AmitSingh');
+
+    const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+    const requestedDays = weekNumbers.split(',').map(Number);
+
+    const responseData = {};
+
+    for (const dayIndex of requestedDays) {
+      const dayOfWeek = daysOfWeek[dayIndex];
+      responseData[dayOfWeek] = await getUserListing(dayOfWeek);
+    }
+
+    res.json({
+      status_code: '200',
+      message: 'User data fetched successfully',
+      data: responseData,
+    });
+  } catch (error) {
+    console.error('Error:', error.message);
+    res.status(401).json({ error: 'Invalid token or unexpected error occurred' });
+  }
+};
+
+const getUserListing = async (dayOfWeek) => {
+  try {
+    const users = await User.find({ RegisterDay: dayOfWeek });
+    if (users.length === 0) {
+      console.warn(`No users found for ${dayOfWeek}.`);
+      return [];
+    }
     return users.map((user) => ({
       name: user.name,
       email: user.email,
     }));
   } catch (error) {
-    console.error('Error fetching user data:', error);
+    console.error(`Error fetching user data for ${dayOfWeek}:`, error.message);
     return [];
-  }
-};
-
-const getUserListingByWeek = async (req, res) => {
-  try {
-    const token = req.header('Authorization');
-    const weekNumbers = req.query.week_number;
-    if (!token || !weekNumbers) {
-      return res.status(400).json({ error: 'Invalid request parameters' });
-    }
-    const decoded = jwt.verify(token, 'AmitSingh'); // Use your actual secret key
-    // Split week numbers into an array
-    const weeks = weekNumbers.split(',').map(Number);
-    // Define the days of the week
-    const daysOfWeek = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-    // Fetch user listing for each week and each day
-    const responseData = {};
-    for (const weekNumber of weeks) {
-      responseData[`week_${weekNumber}`] = {};
-      for (let day = 0; day < 7; day++) {
-        const dayOfWeek = daysOfWeek[day];
-        responseData[`week_${weekNumber}`][dayOfWeek] = await getUserListing(dayOfWeek);
-      }
-    }
-    res.json({
-      status_code: '200',
-      message: '----------',
-      data: responseData,
-    });
-  } catch (error) {
-    res.status(401).json({ error: 'Invalid token' });
   }
 };
 
